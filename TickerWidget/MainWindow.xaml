@@ -7,26 +7,35 @@
         Background="#CC1E1E1E" ShowInTaskbar="False">
     <Border CornerRadius="12" BorderBrush="#40FFFFFF" BorderThickness="1" Padding="12">
         <Grid MouseLeftButtonDown="Grid_MouseLeftButtonDown">
-            <!-- Din liste (binder til MainViewModel.Items) -->
-            <ListBox ItemsSource="{Binding Items}" BorderThickness="0" Background="{x:Null}">
+            <!-- Din liste (binder til MainViewModel.Items)
+                 Give top margin so ListBox items don't overlap the close button area. -->
+            <ListBox ItemsSource="{Binding Items}"
+                     BorderThickness="0"
+                     Background="{x:Null}"
+                     Margin="0,36,0,0"> 
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding Ticker}" Foreground="White" Margin="0,0,8,0"/>
-                            <!-- Price: style changes Foreground based on Movement -->
+                            <!-- Movement colours unchanged -->
                             <TextBlock Text="{Binding Price}" Margin="0,0,8,0">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
-                                        <!-- default: initial / unchanged => black -->
                                         <Setter Property="Foreground" Value="Black"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding Movement}" Value="Up">
-                                                <Setter Property="Foreground" Value="LightGreen"/> <!-- green -->
+                                                <Setter Property="Foreground" Value="LightGreen"/>
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding Movement}" Value="Down">
-                                                <Setter Property="Foreground" Value="#FFF44336"/> <!-- red -->
+                                                <Setter Property="Foreground" Value="#FFF44336"/>
                                             </DataTrigger>
-                                            <!-- Initial and Unchanged will use the default black; explicit triggers kept for clarity -->
                                             <DataTrigger Binding="{Binding Movement}" Value="Initial">
                                                 <Setter Property="Foreground" Value="LightBlue"/>
                                             </DataTrigger>
@@ -42,6 +51,18 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+
+            <!-- Close button: declared after the ListBox so it renders on top; keep colours intact -->
+            <Button x:Name="CloseButton"
+                    Content="✕"
+                    Width="28" Height="28"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Background="Transparent" Foreground="White"
+                    BorderThickness="0" FontWeight="Bold" Cursor="Hand"
+                    ToolTip="Close"
+                    Click="CloseButton_Click"
+                    Focusable="False"
+                    Panel.ZIndex="100"/>
         </Grid>
     </Border>
 </Window>
