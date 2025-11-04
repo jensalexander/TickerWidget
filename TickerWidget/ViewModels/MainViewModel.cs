@@ -11,6 +11,14 @@ using System.Windows.Threading;
 
 namespace TickerWidget.ViewModels;
 
+public enum PriceMovement
+{
+    Initial,   // første gang vi får en kurs (vises som sort)
+    Up,        // kursen er steget siden sidst (vises som grøn)
+    Down,      // kursen er faldet siden sidst (vises som rød)
+    Unchanged  // uændret (vises som hvid)
+}
+
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly IYahooQuoteClient _yahoo;
@@ -78,10 +86,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (list is { Count: > 0 })
             {
                 var last = list[^1];
+                var rounded = decimal.Round((decimal)last.Close, 3);
+
+                // Bestem bevægelsen ved at sammenligne med tidligere lagret kurs (hvis eksisterer)
+                var movement = PriceMovement.Initial;
+                if (_latest.TryGetValue(ticker, out var prev))
+                {
+                    if (rounded > prev.Price) movement = PriceMovement.Up;
+                    else if (rounded < prev.Price) movement = PriceMovement.Down;
+                    else movement = PriceMovement.Unchanged;
+                }
+                else
+                {
+                    movement = PriceMovement.Initial; // første gang vi ser ticker
+                }
+
                 _latest[ticker] = new DisplayQuote(
                     Ticker: ticker,
-                    Price: decimal.Round((decimal)last.Close, 3),
-                    AsOf: last.TimestampUtc
+                    Price: rounded,
+                    AsOf: last.TimestampUtc,
+                    Movement: movement
                 );
             }
         }
@@ -125,4 +149,4 @@ public sealed class MainViewModel : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
-public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf);
+public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf, PriceMovement Movement);
