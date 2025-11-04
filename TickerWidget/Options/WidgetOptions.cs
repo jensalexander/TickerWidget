@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace TickerWidget.Options;
@@ -12,6 +13,9 @@ public sealed class WidgetOptions
 
     [Required]
     public ActiveHoursOptions ActiveHours { get; init; } = new();
+
+    // Market-specific ActiveHours (key = market code, e.g. "DK", "US")
+    public IDictionary<string, ActiveHoursOptions> Markets { get; init; } = new Dictionary<string, ActiveHoursOptions>(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class ActiveHoursOptions

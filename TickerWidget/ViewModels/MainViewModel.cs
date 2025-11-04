@@ -8,6 +8,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using System.Windows; // for Application.Current.Dispatcher fallback
 
 namespace TickerWidget.ViewModels;
 
@@ -29,6 +30,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     // Timer der roterer visningen (15 sek)
     private readonly DispatcherTimer _rotateTimer = new();
 
+    private readonly Dispatcher _uiDispatcher;
+
     private readonly string[] _tickers = new[] { "MSFT", "PLTR", "VWS.CO", "ISS.CO", "NETC.CO" };
     private int _rotIdx;
 
@@ -38,10 +41,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
     // Bindes i din ListBox – vi holder kun 1 linje synlig ad gangen
     public ObservableCollection<DisplayQuote> Items { get; } = new();
 
+    // Flag der viser "Starter..." indtil første fetch er kørt
+    private bool _isStarting = true;
+    public bool IsStarting
+    {
+        get => _isStarting;
+        private set
+        {
+            if (_isStarting == value) return;
+            _isStarting = value;
+            Raise();
+        }
+    }
+    private bool _initialFetchDone;
+
     public MainViewModel(IYahooQuoteClient yahoo, IOptions<WidgetOptions> opt)
     {
         _yahoo = yahoo;
         _opt = opt.Value;
+
+        // Capture UI dispatcher (assumes ViewModel constructed on UI thread)
+        _uiDispatcher = Dispatcher.FromThread(System.Threading.Thread.CurrentThread) ?? (Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher);
 
         // === FETCH: hent alle tickere pr. interval ===
         _fetchTimer.Interval = _opt.PollingInterval;
@@ -54,27 +74,50 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Start begge timere og lav et initialt fetch/visning
         _fetchTimer.Start();
         _rotateTimer.Start();
-        _ = FetchAllAsync(); // første hent nu
+        _ = FetchAllAsync(); // første hent nu (fire-and-forget)
     }
 
     private async Task FetchAllAsync()
     {
-        if (!_opt.ActiveHours.IsWithin(DateTimeOffset.Now))
-            return;
-
         try
         {
-            // Hent hver ticker (paralleliseret)
-            var tasks = new List<Task>((_tickers.Length));
+            var nowUtc = DateTimeOffset.UtcNow;
+            var tasks = new List<Task>();
+
             foreach (var t in _tickers)
             {
-                tasks.Add(FetchOneAsync(t));
+                var code = GetMarketCode(t);
+                var tz = GetTimeZoneForMarket(code);
+                var marketNow = TimeZoneInfo.ConvertTime(nowUtc, tz);
+
+                var marketHours = GetMarketHoursForTicker(t);
+                if (marketHours.IsWithin(marketNow))
+                {
+                    // market open -> fetch price
+                    tasks.Add(FetchOneAsync(t));
+                }
+                else
+                {
+                    // market closed -> ensure we set a "closed" entry so rotation can show "LUKKET"
+                    UpdateAsClosed(t, marketNow);
+                }
             }
-            await Task.WhenAll(tasks);
+
+            if (tasks.Count > 0)
+                await Task.WhenAll(tasks);
         }
         catch
         {
             // TODO: log efter behov
+        }
+        finally
+        {
+            // efter første kørsel fjernes "Starter..."
+            if (!_initialFetchDone)
+            {
+                _initialFetchDone = true;
+                IsStarting = false;
+            }
         }
     }
 
@@ -105,8 +148,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     Ticker: ticker,
                     Price: rounded,
                     AsOf: last.TimestampUtc,
-                    Movement: movement
+                    Movement: movement,
+                    MarketOpen: true
                 );
+
+                // Ensure the UI updates immediately if this ticker is currently shown
+                UpdateDisplayedIfNeeded(ticker);
             }
         }
         catch
@@ -115,10 +162,50 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void UpdateAsClosed(string ticker, DateTimeOffset now)
+    {
+        // Keep previous movement if any, but mark market as closed
+        var prevMovement = _latest.TryGetValue(ticker, out var p) ? p.Movement : PriceMovement.Initial;
+        _latest[ticker] = new DisplayQuote(
+            Ticker: ticker,
+            Price: 0m,
+            AsOf: now,
+            Movement: prevMovement,
+            MarketOpen: false
+        );
+
+        // If the closed ticker is currently displayed, update UI immediately
+        UpdateDisplayedIfNeeded(ticker);
+    }
+
+    private void UpdateDisplayedIfNeeded(string ticker)
+    {
+        void Action()
+        {
+            if (Items.Count == 1 && string.Equals(Items[0].Ticker, ticker, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_latest.TryGetValue(ticker, out var dq))
+                {
+                    Items.Clear();
+                    Items.Add(dq);
+                }
+            }
+        }
+
+        if (_uiDispatcher.CheckAccess())
+        {
+            Action();
+        }
+        else
+        {
+            _uiDispatcher.Invoke(Action);
+        }
+    }
+
     private void RotateOnce()
     {
-        if (!_opt.ActiveHours.IsWithin(DateTimeOffset.Now))
-            return;
+        // Rotation still respects overall ActiveHours fallback if you want to hide rotation entirely outside global active hours:
+        // if (!_opt.ActiveHours.IsWithin(DateTimeOffset.Now)) return;
 
         if (_tickers.Length == 0) return;
 
@@ -144,9 +231,46 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _rotateTimer.Stop();
     }
 
+    // Determine market code for a ticker. Simple heuristic; extend as needed.
+    private static string GetMarketCode(string ticker)
+    {
+        if (ticker?.EndsWith(".CO", StringComparison.OrdinalIgnoreCase) == true)
+            return "DK";
+        return "US";
+    }
+
+    private ActiveHoursOptions GetMarketHoursForTicker(string ticker)
+    {
+        var code = GetMarketCode(ticker);
+        if (_opt.Markets != null && _opt.Markets.TryGetValue(code, out var hours))
+            return hours;
+        return _opt.ActiveHours; // fallback
+    }
+
+    private static TimeZoneInfo GetTimeZoneForMarket(string marketCode)
+    {
+        try
+        {
+            return marketCode?.ToUpperInvariant() switch
+            {
+                "US" => TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time"),   // Windows ID for ET
+                "DK" => TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time"), // Windows ID for Denmark (Copenhagen)
+                _    => TimeZoneInfo.Local
+            };
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Local;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Local;
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Raise([CallerMemberName] string? n = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
-public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf, PriceMovement Movement);
+public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf, PriceMovement Movement, bool MarketOpen = true);
