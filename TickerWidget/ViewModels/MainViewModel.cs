@@ -164,11 +164,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     movement = PriceMovement.Initial; // første gang vi ser ticker
                 }
 
+                var marketCode = GetMarketCode(ticker);
+
                 _latest[ticker] = new DisplayQuote(
                     Ticker: ticker,
                     Price: rounded,
                     AsOf: last.TimestampUtc,
                     Movement: movement,
+                    MarketCode: marketCode,
                     MarketOpen: marketOpen
                 );
 
@@ -192,11 +195,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         else
         {
             // No previous price available — set placeholder but mark closed.
+            var mk = GetMarketCode(ticker);
             _latest[ticker] = new DisplayQuote(
                 Ticker: ticker,
                 Price: 0m,
                 AsOf: now,
                 Movement: PriceMovement.Initial,
+                MarketCode: mk,
                 MarketOpen: false
             );
         }
@@ -300,4 +305,5 @@ public sealed class MainViewModel : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
-public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf, PriceMovement Movement, bool MarketOpen = true);
+// Added MarketCode property. MarketOpen default true.
+public sealed record DisplayQuote(string Ticker, decimal Price, DateTimeOffset AsOf, PriceMovement Movement, string MarketCode, bool MarketOpen = true);

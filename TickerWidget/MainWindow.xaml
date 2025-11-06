@@ -48,11 +48,11 @@
 
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding Ticker}" Foreground="White" Margin="0,0,6,0" FontSize="12"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" >
+                            <TextBlock Text="{Binding Ticker}" Foreground="White" Margin="0,0,8,0" FontSize="12"/>
 
                             <!-- Price text: always visible. When MarketOpen == false, render LightGray (overrides movement colours) -->
-                            <TextBlock Text="{Binding Price}" Margin="0,0,6,0" FontSize="12">
+                            <TextBlock Text="{Binding Price}" Margin="0,0,8,0" FontSize="12">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="Black"/>
@@ -79,7 +79,14 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <TextBlock Text="{Binding AsOf}" Foreground="LightGray" Margin="6,0,0,0" FontSize="9"/>
+                            <!-- Market code instead of timezone -->
+                            <TextBlock Text="{Binding MarketCode}" Foreground="LightGray" Margin="0,0,8,0" FontSize="12"/>
+
+                            <!-- Timestamp: 24-hour format with seconds -->
+                            <TextBlock Text="{Binding AsOf, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}"
+                                       Foreground="LightGray"
+                                       Margin="0,0,0,0"
+                                       FontSize="12"/>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
