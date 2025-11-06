@@ -32,7 +32,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private readonly Dispatcher _uiDispatcher;
 
-    private readonly string[] _tickers = new[] { "MSFT", "PLTR", "VWS.CO", "ISS.CO", "NETC.CO" };
+    //private readonly string[] _tickers = new[] { "MSFT", "PLTR", "VWS.CO", "ISS.CO", "NETC.CO" };
+    private readonly string[] _tickers = new[] { "MSFT", "PLTR", "LNAI" };
     private int _rotIdx;
 
     // Seneste priser (cache) fra sidste fetch
@@ -84,22 +85,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var nowUtc = DateTimeOffset.UtcNow;
             var tasks = new List<Task>();
 
-            foreach (var t in _tickers)
+            // First run: fetch all tickers regardless of market open, but set MarketOpen correctly per market time.
+            if (!_initialFetchDone)
             {
-                var code = GetMarketCode(t);
-                var tz = GetTimeZoneForMarket(code);
-                var marketNow = TimeZoneInfo.ConvertTime(nowUtc, tz);
+                foreach (var t in _tickers)
+                {
+                    var code = GetMarketCode(t);
+                    var tz = GetTimeZoneForMarket(code);
+                    var marketNow = TimeZoneInfo.ConvertTime(nowUtc, tz);
+                    var marketHours = GetMarketHoursForTicker(t);
+                    var marketOpen = marketHours.IsWithin(marketNow);
 
-                var marketHours = GetMarketHoursForTicker(t);
-                if (marketHours.IsWithin(marketNow))
-                {
-                    // market open -> fetch price
-                    tasks.Add(FetchOneAsync(t));
+                    // fetch regardless, but let FetchOneAsync know whether market is open now
+                    tasks.Add(FetchOneAsync(t, marketOpen));
                 }
-                else
+            }
+            else
+            {
+                // Subsequent runs: only fetch tickers whose market is open; otherwise keep last known price but mark as closed.
+                foreach (var t in _tickers)
                 {
-                    // market closed -> ensure we set a "closed" entry so rotation can show "LUKKET"
-                    UpdateAsClosed(t, marketNow);
+                    var code = GetMarketCode(t);
+                    var tz = GetTimeZoneForMarket(code);
+                    var marketNow = TimeZoneInfo.ConvertTime(nowUtc, tz);
+                    var marketHours = GetMarketHoursForTicker(t);
+
+                    if (marketHours.IsWithin(marketNow))
+                    {
+                        tasks.Add(FetchOneAsync(t, true));
+                    }
+                    else
+                    {
+                        UpdateAsClosed(t, marketNow);
+                    }
                 }
             }
 
@@ -121,11 +139,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task FetchOneAsync(string ticker)
+    // marketOpen indicates whether the market was open at fetch time; caller provides correct value.
+    private async Task FetchOneAsync(string ticker, bool marketOpen = true)
     {
         try
         {
             var list = await _yahoo.GetIntradayAsync(ticker, interval: "15m", range: "1d");
+
             if (list is { Count: > 0 })
             {
                 var last = list[^1];
@@ -149,7 +169,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     Price: rounded,
                     AsOf: last.TimestampUtc,
                     Movement: movement,
-                    MarketOpen: true
+                    MarketOpen: marketOpen
                 );
 
                 // Ensure the UI updates immediately if this ticker is currently shown
@@ -164,15 +184,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void UpdateAsClosed(string ticker, DateTimeOffset now)
     {
-        // Keep previous movement if any, but mark market as closed
-        var prevMovement = _latest.TryGetValue(ticker, out var p) ? p.Movement : PriceMovement.Initial;
-        _latest[ticker] = new DisplayQuote(
-            Ticker: ticker,
-            Price: 0m,
-            AsOf: now,
-            Movement: prevMovement,
-            MarketOpen: false
-        );
+        // Preserve previous price/AsOf/movement if available; otherwise set defaults.
+        if (_latest.TryGetValue(ticker, out var prev))
+        {
+            _latest[ticker] = prev with { MarketOpen = false };
+        }
+        else
+        {
+            // No previous price available — set placeholder but mark closed.
+            _latest[ticker] = new DisplayQuote(
+                Ticker: ticker,
+                Price: 0m,
+                AsOf: now,
+                Movement: PriceMovement.Initial,
+                MarketOpen: false
+            );
+        }
 
         // If the closed ticker is currently displayed, update UI immediately
         UpdateDisplayedIfNeeded(ticker);
