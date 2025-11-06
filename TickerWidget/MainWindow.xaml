@@ -63,8 +63,8 @@
             <!-- Overlay the content and clip it to the rounded rectangle so nothing renders outside corners -->
             <Grid Margin="0" ClipToBounds="True">
                 <Grid.Clip>
-                    <!-- Clip geometry that matches the rounded rectangle -->
-                    <RectangleGeometry RadiusX="12" RadiusY="12" Rect="0,0,320,120"/>
+                    <!-- Clip geometry that will be kept in sync with Card size from code-behind -->
+                    <RectangleGeometry x:Name="CardClip" RadiusX="12" RadiusY="12" Rect="0,0,320,120"/>
                 </Grid.Clip>
 
                 <Grid MouseLeftButtonDown="Grid_MouseLeftButtonDown">
@@ -73,7 +73,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <ListBox ItemsSource="{Binding Items}"
+                    <ListBox x:Name="ItemsListBox" ItemsSource="{Binding Items}"
                              BorderThickness="0"
                              Background="Transparent"
                              HorizontalContentAlignment="Stretch"

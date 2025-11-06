@@ -34,6 +34,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     //private readonly string[] _tickers = new[] { "MSFT", "PLTR", "VWS.CO", "ISS.CO", "NETC.CO" };
     private readonly string[] _tickers = new[] { "MSFT", "LNAI", "NETC.CO" };
+    public IReadOnlyList<string> Tickers => _tickers; // expose for UI sizing
+
     private int _rotIdx;
 
     // Seneste priser (cache) fra sidste fetch
